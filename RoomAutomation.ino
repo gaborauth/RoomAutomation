@@ -21,7 +21,7 @@ extern "C" {
 #include <OneWire.h>
 #include <Wire.h>
 
-#define VERSION        "0.1.16-0"
+#define VERSION        "0.1.16-1"
 #define DEEPSLEEP      150000000
 
 #define MAX_OW_DEVICES 10
@@ -213,6 +213,10 @@ char acHeatFMP4[]  = "101110100100010111010011001011000101111010100001";
  * Start web server on the port 80 and start a client.
  */
 ESP8266WebServer server(80);
+volatile int staticIpEnabled = 0;
+volatile int staticIp[4];
+volatile int staticRoute[4];
+volatile int staticMask[4];
 
 /**
  * NTP synchronization.
@@ -243,13 +247,6 @@ struct {
 bool rtcValid = false;
 
 /**
- * Static IP address.
- */
-IPAddress ip(192, 168, 0, 145);
-IPAddress gateway(192, 168, 0, 1);
-IPAddress subnet(255, 255, 255, 0);
-
-/**
  * Set up the module.
  */
 void setup() {
@@ -268,16 +265,6 @@ void setup() {
     }
     Serial.println();
     Serial.println();
-
-    /**
-     * Connect to the WiFi and stand by if WiFi not available.
-     */
-    wifiConnect();
-    if (WiFi.status() != WL_CONNECTED) {
-        Serial.println("Cannot connect, entering deep sleep state...");
-        delay(2500);
-        ESP.deepSleep(DEEPSLEEP);
-    }
 
     /**
      * Query the unique id from MAC address and check for update.
@@ -300,7 +287,33 @@ void setup() {
             heatingEnabled = deviceParametersMap[i].heatingEnabled;
             pwmEnabled = deviceParametersMap[i].pwmEnabled;
             relayEnabled = deviceParametersMap[i].relayEnabled;
+
+            staticIpEnabled = deviceParametersMap[i].staticIpEnabled;
+            staticIp[0] = deviceParametersMap[i].staticIp[0];
+            staticIp[1] = deviceParametersMap[i].staticIp[1];
+            staticIp[2] = deviceParametersMap[i].staticIp[2];
+            staticIp[3] = deviceParametersMap[i].staticIp[3];
+            
+            staticRoute[0] = deviceParametersMap[i].staticRoute[0];
+            staticRoute[1] = deviceParametersMap[i].staticRoute[1];
+            staticRoute[2] = deviceParametersMap[i].staticRoute[2];
+            staticRoute[3] = deviceParametersMap[i].staticRoute[3];
+
+            staticMask[0] = deviceParametersMap[i].staticMask[0];
+            staticMask[1] = deviceParametersMap[i].staticMask[1];
+            staticMask[2] = deviceParametersMap[i].staticMask[2];
+            staticMask[3] = deviceParametersMap[i].staticMask[3];
         }
+    }
+
+    /**
+     * Connect to the WiFi and stand by if WiFi not available.
+     */
+    wifiConnect();
+    if (WiFi.status() != WL_CONNECTED) {
+        Serial.println("Cannot connect, entering deep sleep state...");
+        delay(2500);
+        ESP.deepSleep(DEEPSLEEP);
     }
     
     /**
@@ -374,6 +387,12 @@ void setup() {
     pinMode(PIN_POWER, OUTPUT);  // BME280 power
 
     digitalWrite(PIN_POWER, HIGH);
+
+    if (deepSleepEnabled) {
+        sensors.begin();
+
+        return;
+    }
 
     /**
      * Calculate the non-linear brightness of PWM output.
@@ -536,7 +555,12 @@ void setup() {
  * Connect to the WiFi.
  */
 void wifiConnect() {
-    //WiFi.config(ip, gateway, subnet);
+    if (staticIpEnabled) {
+        IPAddress ip(staticIp[0], staticIp[1], staticIp[2], staticIp[3]);
+        IPAddress gateway(staticRoute[0], staticRoute[1], staticRoute[2], staticRoute[3]);
+        IPAddress subnet(staticMask[0], staticMask[1], staticMask[2], staticMask[3]);
+        WiFi.config(ip, gateway, subnet);
+    }
 
     bool rtcValid = false;
     if(ESP.rtcUserMemoryRead(0, (uint32_t*)&rtcData, sizeof(rtcData))) {
@@ -809,15 +833,16 @@ void handleSwitchPin() {
 void loop()
 {
     handleSensor();
-    handleNtpPacket();
-    checkForUpdate();
-    server.handleClient();
 
     if (deepSleepEnabled) {
         digitalWrite(PIN_POWER, LOW);
         Serial.println("Entering deep sleep state...");
         ESP.deepSleep(deepSleepEnabled);
     }
+    
+    handleNtpPacket();
+    checkForUpdate();
+    server.handleClient();
 }
 
 /**
@@ -889,6 +914,7 @@ void handleSensor() {
     if (chipID != 0x60) {
         digitalWrite(PIN_POWER, LOW);
         heatController();
+        acController();
         return;
     }
 
@@ -927,6 +953,7 @@ void handleSensor() {
     http.end();
 
     heatController();
+    acController();
 }
 
 /**
@@ -979,7 +1006,7 @@ void sendTemperature(DeviceAddress address, String vcc) {
 }
 
 /**
- * Control AC units.
+ * Control heating units through relay output.
  */
 void heatController() {
     HTTPClient http;
@@ -1023,10 +1050,18 @@ void heatController() {
             digitalWrite(PIN_RELAY, HIGH);
         }
         Serial.println("Temperature average: " + String(tempAvg) + ", relay: " + String(relayState));
-
-        return;
     }
+}
 
+
+/**
+ * Control AC units.
+ */
+void acController() {
+    HTTPClient http;
+    http.useHTTP10(true);
+    http.setTimeout(8000);
+    
     /**
      * PID controller via IR.
      */
