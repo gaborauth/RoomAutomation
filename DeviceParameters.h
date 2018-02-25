@@ -13,6 +13,7 @@ typedef struct {
      int heatingEnabled;
      int pwmEnabled;
      int relayEnabled;
+     int ventilationEnabled;
 
      int staticIpEnabled;
      int staticIp[4];
@@ -21,5 +22,6 @@ typedef struct {
 } deviceParameters;
 
 deviceParameters deviceParametersMap[NUMBER_OF_DEVICES] = {
-    {"000000000000", 0, 0, 0, 0, 0, 0, 0, {0, 0, 0, 0}, {0, 0, 0, 0}, {0, 0, 0, 0}}, // Test-1
+    {"000000000000", 0, 0, 0, 0, 0, 0, 0, 0, {0, 0, 0, 0}, {0, 0, 0, 0}, {0, 0, 0, 0}}, // Test-1
 };
+

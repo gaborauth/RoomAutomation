@@ -18,10 +18,11 @@ extern "C" {
 #include <ESP8266WebServer.h>
 #include <ESP8266WiFi.h>
 
+#include <TimeLib.h>
 #include <OneWire.h>
 #include <Wire.h>
 
-#define VERSION        "0.1.16-1"
+#define VERSION        "0.1.16-10"
 #define DEEPSLEEP      150000000
 
 #define MAX_OW_DEVICES 10
@@ -131,6 +132,16 @@ int heatingEnabled = 0;
 
 float heatingTargetTemp = 23.0;
 float heatingHysteresis = 0.06;
+
+/**
+ * Ventilation state.
+ */
+int ventilationEnabled = 0;
+volatile int ventilationState = LOW;
+
+float ventilationHumidityAverage = 30.0;
+float ventilationTargetHumidity = 40.0;
+float ventilationHysteresis = 1.0;
 
 /**
  * Relay state.
@@ -287,6 +298,7 @@ void setup() {
             heatingEnabled = deviceParametersMap[i].heatingEnabled;
             pwmEnabled = deviceParametersMap[i].pwmEnabled;
             relayEnabled = deviceParametersMap[i].relayEnabled;
+            ventilationEnabled = deviceParametersMap[i].ventilationEnabled;
 
             staticIpEnabled = deviceParametersMap[i].staticIpEnabled;
             staticIp[0] = deviceParametersMap[i].staticIp[0];
@@ -327,6 +339,7 @@ void setup() {
     Serial.println("Heating enabled [" + NODE_UUID + "]: " + String(heatingEnabled));
     Serial.println("PWM enabled [" + NODE_UUID + "]: " + String(pwmEnabled));
     Serial.println("Relay enabled [" + NODE_UUID + "]: " + String(relayEnabled));
+    Serial.println("Ventilation enabled [" + NODE_UUID + "]: " + String(ventilationEnabled));
     Serial.println();
 
     /**
@@ -420,13 +433,17 @@ void setup() {
         server.send(200, "text/plain",
             "Server MAC is '"+ NODE_UUID +"', last reset reason was '" + resetReason + "'.\n" +
             "Version [" + String(PIN_LAYOUT) + "-" + String(VERSION) + "].\n" +
-            "Current uptime (timestamp): " + String(millis()) + " ms\n\n" +
+            "Current uptime (timestamp): " + String(millis()) + " ms\n" +
+            "Current NTP (timestamp): " + String(unixTimestamp()) + "\n" +
+            "Local date and time: " + String(year()) + "-" + String(month()) + "-" + String(day()) + " " +
+                String(hour()) + ":" + String(minute()) + ":" + String(second()) + "\n\n" +
 
             "AC enabled: " + String(acEnabled) + "\n" +
             "Deep sleep enabled: " + String(deepSleepEnabled) + "\n" +
             "Heating enabled: " + String(heatingEnabled) + "\n" +
             "PWM enabled: " + String(pwmEnabled) + "\n" +
-            "Relay enabled: " + String(relayEnabled) + "\n\n" +
+            "Relay enabled: " + String(relayEnabled) + "\n" +
+            "Ventilation enabled: " + String(ventilationEnabled) + "\n\n" +
 
             "PWM: " + String(pwmCurrentPower) + "\n" +
             "PWM target power: " + String(pwmTargetPower) + "\n" +
@@ -445,7 +462,9 @@ void setup() {
             "PIR state: " + String(pirState) + "\n" +
             "PIR last change: " + String(pirLastChange) + "\n\n" +
 
-            "Relay state: " + String(relayState) + "\n\n" +
+            "Relay state: " + String(relayState) + "\n" +
+            "Ventilation state: " + String(ventilationState) + "\n\n" +
+            "Ventilation humidity average: " + String(ventilationHumidityAverage) + "\n\n" +
 
             "AC proportional / integral / derivative: " + String(acProportional) + " / " + String(acIntegral) + " / " + String(acDerivative) + " / \n" +
             "AC integral error: " + String(acIntegralError) + "\n" +
@@ -533,7 +552,7 @@ void setup() {
     Serial.println("HTTP server started...");
     Serial.println();
 
-    if (pwmEnabled) {
+    if (pwmEnabled || ventilationEnabled) {
         pinMode(PIN_PWM, OUTPUT);
         analogWriteRange(PWM_MAX_VALUE);
         analogWriteFreq(PWM_MAX_FREQ);
@@ -548,6 +567,9 @@ void setup() {
     timer0_write(ESP.getCycleCount() / 833200 * 833200 + 833200);
     interrupts();
 
+    setSyncProvider(timeProvider);
+    setSyncInterval(10);
+  
     sensors.begin();
 }
 
@@ -913,8 +935,11 @@ void handleSensor() {
 
     if (chipID != 0x60) {
         digitalWrite(PIN_POWER, LOW);
+
         heatController();
         acController();
+        ventilationController();
+
         return;
     }
 
@@ -954,6 +979,7 @@ void handleSensor() {
 
     heatController();
     acController();
+    ventilationController();
 }
 
 /**
@@ -1003,6 +1029,49 @@ void sendTemperature(DeviceAddress address, String vcc) {
     http.begin(String(BASE_URL) + "/numberItem/create/" + addressToString(address) + "/temperature/" + String(temp));
     Serial.println("Sent 'temperature': " + String(http.GET()));
     http.end();
+}
+
+/**
+ * Control ventilation through PWM output.
+ */
+void ventilationController() {
+    HTTPClient http;
+    http.useHTTP10(true);
+    http.setTimeout(8000);
+
+    /**
+     * Ventilation logic (simple on/off).
+     */
+    if(ventilationEnabled) {
+        Serial.println("PWM based ventilation controller");
+
+        http.begin(String(BASE_URL) + "/numberItem/loadLastFloatValue/5ccf7fd89d76/humidity");
+        Serial.println("Load humidity of '5ccf7fd89d76': " + String(http.GET()));
+        String humidityStr = http.getString();
+        http.end();
+
+        if (humidityStr.length() == 0) {
+           ventilationHumidityAverage = humidity;
+        } else {
+           ventilationHumidityAverage = humidityStr.toFloat();
+        }
+
+        if (ventilationHumidityAverage > ventilationTargetHumidity + ventilationHysteresis) {
+            ventilationState = HIGH;
+        } else if (ventilationHumidityAverage < ventilationTargetHumidity - ventilationHysteresis) {
+            ventilationState = LOW;
+        }
+
+        /**
+         * Night silent mode... :)
+         */
+        if (hour() < 8 || hour() > 21) {
+            ventilationState = LOW;
+        }
+        
+        digitalWrite(PIN_PWM, ventilationState);
+        Serial.println("Humidity average: " + String(ventilationHumidityAverage) + ", relay: " + String(ventilationState));
+    }
 }
 
 /**
@@ -1470,6 +1539,13 @@ long unixTimestamp() {
     }
 
     return millis() / 1000 + ntpTimestampOffset;
+}
+
+/**
+ * Time provider of Time library.
+ */
+time_t timeProvider() {
+    return unixTimestamp();
 }
 
 /**
