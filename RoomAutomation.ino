@@ -22,7 +22,7 @@ extern "C" {
 #include <OneWire.h>
 #include <Wire.h>
 
-#define VERSION        "0.1.16-10"
+#define VERSION        "0.1.16-11"
 #define DEEPSLEEP      150000000
 
 #define MAX_OW_DEVICES 10
@@ -1060,6 +1060,13 @@ void ventilationController() {
             ventilationState = HIGH;
         } else if (ventilationHumidityAverage < ventilationTargetHumidity - ventilationHysteresis) {
             ventilationState = LOW;
+        }
+
+        /**
+         * 10 minutes ventilation on every hour.
+         */
+        if (minute() > 50) {
+            ventilationState = HIGH;
         }
 
         /**
