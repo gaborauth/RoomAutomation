@@ -22,7 +22,7 @@ extern "C" {
 #include <OneWire.h>
 #include <Wire.h>
 
-#define VERSION        "0.1.16-11"
+#define VERSION        "0.1.17-5"
 #define DEEPSLEEP      150000000
 
 #define MAX_OW_DEVICES 10
@@ -681,7 +681,7 @@ void wifiConnect(char* ssid, char* password, bool rtc) {
  * Try to update the firmware.
  */
 void doHttpUpdate() {
-    t_httpUpdate_return ret = ESPhttpUpdate.update(String(BASE_URL) + "/firmware/check/" + NODE_UUID + "/" + String(VERSION), String(VERSION));
+    t_httpUpdate_return ret = ESPhttpUpdate.update(String(IOT_BASE_URL) + "/firmware/check/" + IOT_USER_ID + "/" + IOT_PASSWORD + "/"  + NODE_UUID + "/" + String(VERSION), String(VERSION));
     switch(ret) {
         case HTTP_UPDATE_FAILED: {
             Serial.println("HTTP update: failed(" + String(ESPhttpUpdate.getLastError()) + "): " + ESPhttpUpdate.getLastErrorString());
@@ -881,7 +881,7 @@ void checkForUpdate() {
     http.useHTTP10(true);
     http.setTimeout(8000);
 
-    http.begin(String(BASE_URL) + "/firmware/check/" + NODE_UUID + "/" + String(VERSION) + "/" + WiFi.localIP().toString());
+    http.begin(String(IOT_BASE_URL) + "/firmware/check/" + IOT_USER_ID + "/" + IOT_PASSWORD + "/" + NODE_UUID + "/" + String(VERSION) + "/" + WiFi.localIP().toString());
     int code = http.GET();
     Serial.println("Checking for new firmware: " + String(code));
     http.end();
@@ -907,7 +907,7 @@ void handleSensor() {
     http.useHTTP10(true);
     http.setTimeout(8000);
 
-    http.begin(String(BASE_URL) + "/numberItem/create/" + NODE_UUID + "/vcc/" + vcc);
+    http.begin(String(IOT_BASE_URL) + "/numberItem/create/" + IOT_USER_ID + "/" + IOT_PASSWORD + "/" + NODE_UUID + "/vcc/" + vcc);
     Serial.println("Sent 'vcc': " + String(http.GET()));
     http.end();
 
@@ -965,15 +965,15 @@ void handleSensor() {
     Serial.println("Humidity     " + String(humidity));
     Serial.println("Pressure     " + String(pressure));
 
-    http.begin(String(BASE_URL) + "/numberItem/create/" + NODE_UUID + "/temperature/" + String(temp));
+    http.begin(String(IOT_BASE_URL) + "/numberItem/create/" + IOT_USER_ID + "/" + IOT_PASSWORD + "/" + NODE_UUID + "/temperature/" + String(temp));
     Serial.println("Sent 'temperature': " + String(http.GET()));
     http.end();
 
-    http.begin(String(BASE_URL) + "/numberItem/create/" + NODE_UUID + "/pressure/" + String(pressure));
+    http.begin(String(IOT_BASE_URL) + "/numberItem/create/" + IOT_USER_ID + "/" + IOT_PASSWORD + "/" + NODE_UUID + "/pressure/" + String(pressure));
     Serial.println("Sent 'pressure': " + String(http.GET()));
     http.end();
 
-    http.begin(String(BASE_URL) + "/numberItem/create/" + NODE_UUID + "/humidity/" + String(humidity));
+    http.begin(String(IOT_BASE_URL) + "/numberItem/create/" + IOT_USER_ID + "/" + IOT_PASSWORD + "/" + NODE_UUID + "/humidity/" + String(humidity));
     Serial.println("Sent 'humidity': " + String(http.GET()));
     http.end();
 
@@ -1022,11 +1022,11 @@ void sendTemperature(DeviceAddress address, String vcc) {
     http.useHTTP10(true);
     http.setTimeout(8000);
 
-    http.begin(String(BASE_URL) + "/numberItem/create/" + addressToString(address) + "/vcc/" + vcc);
+    http.begin(String(IOT_BASE_URL) + "/numberItem/create/" + IOT_USER_ID + "/" + IOT_PASSWORD + "/" + addressToString(address) + "/vcc/" + vcc);
     Serial.println("Sent 'vcc': " + String(http.GET()));
     http.end();
 
-    http.begin(String(BASE_URL) + "/numberItem/create/" + addressToString(address) + "/temperature/" + String(temp));
+    http.begin(String(IOT_BASE_URL) + "/numberItem/create/" + IOT_USER_ID + "/" + IOT_PASSWORD + "/" + addressToString(address) + "/temperature/" + String(temp));
     Serial.println("Sent 'temperature': " + String(http.GET()));
     http.end();
 }
@@ -1045,7 +1045,7 @@ void ventilationController() {
     if(ventilationEnabled) {
         Serial.println("PWM based ventilation controller");
 
-        http.begin(String(BASE_URL) + "/numberItem/loadLastFloatValue/5ccf7fd89d76/humidity");
+        http.begin(String(IOT_BASE_URL) + "/numberItem/loadLastFloatValue/5ccf7fd89d76/humidity");
         Serial.println("Load humidity of '5ccf7fd89d76': " + String(http.GET()));
         String humidityStr = http.getString();
         http.end();
@@ -1093,7 +1093,7 @@ void heatController() {
      * Send the received IR command.
      */
     if (irSentCommand == 0) {
-        http.begin(String(BASE_URL) + "/irCommand/create/" + NODE_UUID + "/" + irReceivedCommand);
+        http.begin(String(IOT_BASE_URL) + "/irCommand/create/" + NODE_UUID + "/" + irReceivedCommand);
         Serial.println("Sent 'ir command': " + String(http.GET()));
         http.end();
 
@@ -1106,7 +1106,7 @@ void heatController() {
     if(heatingEnabled) {
         Serial.println("Relay based heat controller");
 
-        http.begin(String(BASE_URL) + "/numberItem/loadLastFloatValue/5ccf7fd93c7b/temperature");
+        http.begin(String(IOT_BASE_URL) + "/numberItem/loadLastFloatValue/5ccf7fd93c7b/temperature");
         Serial.println("Load temperature of '5ccf7fd93c7b': " + String(http.GET()));
         String tempStr = http.getString();
         http.end();
@@ -1161,7 +1161,7 @@ void acController() {
                 irSendBuff[i] = acOff[i];
             }
 
-            http.begin(String(BASE_URL) + "/acCommand/create/" + NODE_UUID + "/" + String(irSendBuff) + "/off");
+            http.begin(String(IOT_BASE_URL) + "/acCommand/create/" + NODE_UUID + "/" + String(irSendBuff) + "/off");
             Serial.println("Sent 'ir command': " + String(http.GET()));
             http.end();
 
@@ -1183,7 +1183,7 @@ void acController() {
                 irSendBuff[i] = acHeat23On[i];
             }
 
-            http.begin(String(BASE_URL) + "/acCommand/create/" + NODE_UUID + "/" + String(irSendBuff) + "/h23/on");
+            http.begin(String(IOT_BASE_URL) + "/acCommand/create/" + NODE_UUID + "/" + String(irSendBuff) + "/h23/on");
             Serial.println("Sent 'ir command': " + String(http.GET()));
             http.end();
 
@@ -1195,7 +1195,7 @@ void acController() {
                 irSendBuff[i] = acHeatFMOn[i];
             }
 
-            http.begin(String(BASE_URL) + "/acCommand/create/" + NODE_UUID + "/" + String(irSendBuff) + "/h23/fm");
+            http.begin(String(IOT_BASE_URL) + "/acCommand/create/" + NODE_UUID + "/" + String(irSendBuff) + "/h23/fm");
             Serial.println("Sent 'ir command': " + String(http.GET()));
             http.end();
 
@@ -1216,7 +1216,7 @@ void acController() {
                 irSendBuff[i] = acCool23On[i];
             }
 
-            http.begin(String(BASE_URL) + "/acCommand/create/" + NODE_UUID + "/" + String(irSendBuff) + "/c23/on");
+            http.begin(String(IOT_BASE_URL) + "/acCommand/create/" + NODE_UUID + "/" + String(irSendBuff) + "/c23/on");
             Serial.println("Sent 'ir command': " + String(http.GET()));
             http.end();
 
@@ -1228,7 +1228,7 @@ void acController() {
                 irSendBuff[i] = acCoolFMOn[i];
             }
 
-            http.begin(String(BASE_URL) + "/acCommand/create/" + NODE_UUID + "/" + String(irSendBuff) + "/c23/fm");
+            http.begin(String(IOT_BASE_URL) + "/acCommand/create/" + NODE_UUID + "/" + String(irSendBuff) + "/c23/fm");
             Serial.println("Sent 'ir command': " + String(http.GET()));
             http.end();
 
@@ -1292,7 +1292,7 @@ void acController() {
                 }
             }
 
-            http.begin(String(BASE_URL) + "/acCommand/create/" + NODE_UUID + "/" + String(irSendBuff) + "/hfm/" + followMeState + "/" + error + "/" + acIntegralError + "/" + acDerivativeError);
+            http.begin(String(IOT_BASE_URL) + "/acCommand/create/" + NODE_UUID + "/" + String(irSendBuff) + "/hfm/" + followMeState + "/" + error + "/" + acIntegralError + "/" + acDerivativeError);
             Serial.println("Sent 'ir command': " + String(http.GET()));
             http.end();
 
@@ -1356,7 +1356,7 @@ void acController() {
                 }
             }
 
-            http.begin(String(BASE_URL) + "/acCommand/create/" + NODE_UUID + "/" + String(irSendBuff) + "/cfm/" + followMeState + "/" + error + "/" + acIntegralError + "/" + acDerivativeError);
+            http.begin(String(IOT_BASE_URL) + "/acCommand/create/" + NODE_UUID + "/" + String(irSendBuff) + "/cfm/" + followMeState + "/" + error + "/" + acIntegralError + "/" + acDerivativeError);
             Serial.println("Sent 'ir command': " + String(http.GET()));
             http.end();
 

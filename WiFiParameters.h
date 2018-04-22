@@ -5,4 +5,7 @@
 #define AP2_SSID       "ap03"
 #define AP2_PASSWORD   "********"
 
-#define BASE_URL       "http://base.url/rest/"
+#define IOT_BASE_URL   "http://iothub.live/rest"
+#define IOT_USER_ID    "11cf8f40-460b-11e8-b506-778c45541df0"
+#define IOT_PASSWORD   "vdxDdz3DX9rkByNn"
+
