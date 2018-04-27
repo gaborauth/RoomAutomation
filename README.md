@@ -1,6 +1,6 @@
 # RoomAutomation
-Room automation with ESP8266 in Arduino
-Server support: https://iothub.live/nodes/4ca6ff41-4408-11e8-94bd-3dd310e71935
+* Room automation with ESP8266 in Arduino
+* Cloud support: https://iothub.live/nodes/4ca6ff41-4408-11e8-94bd-3dd310e71935
 
 # Features
 
