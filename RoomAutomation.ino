@@ -22,7 +22,7 @@ extern "C" {
 #include <OneWire.h>
 #include <Wire.h>
 
-#define VERSION        "0.1.17-5"
+#define VERSION        "0.1.18-4"
 #define DEEPSLEEP      150000000
 
 #define MAX_OW_DEVICES 10
@@ -68,7 +68,8 @@ volatile int PIN_POWER   = D8; // 10k pull-down
  * Reset reason string and UUID of the node.
  */
 String resetReason = "unknown";
-String NODE_UUID;
+String MAC_ADDRESS;
+String DEVICE_ID;
 
 /**
  * Deep sleep flag.
@@ -282,15 +283,16 @@ void setup() {
      */
     byte mac[6]; WiFi.macAddress(mac);
     char macString[13]; sprintf(macString, "%02x%02x%02x%02x%02x%02x", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
-    NODE_UUID = String(macString);
-    Serial.println("ESP8266 MAC = " + NODE_UUID);
+    MAC_ADDRESS = String(macString);
+    Serial.println("ESP8266 MAC = " + MAC_ADDRESS);
     Serial.println();
 
     /**
      * Query runtime parameters from the map.
      */
     for(int i = 0; i < NUMBER_OF_DEVICES; i++) {
-        if (NODE_UUID.equals(deviceParametersMap[i].name)) {
+        if (MAC_ADDRESS.equals(deviceParametersMap[i].name)) {
+            DEVICE_ID = deviceParametersMap[i].deviceId;
             PIN_LAYOUT = deviceParametersMap[i].pinLayout;
 
             acEnabled = deviceParametersMap[i].acEnabled;
@@ -334,12 +336,12 @@ void setup() {
     Serial.println();
     Serial.println("Version [" + String(PIN_LAYOUT) + "-" + String(VERSION) + "] is starting...");
     Serial.println();
-    Serial.println("AC enabled [" + NODE_UUID + "]: " + String(acEnabled));
-    Serial.println("Deep sleep enabled [" + NODE_UUID + "]: " + String(deepSleepEnabled));
-    Serial.println("Heating enabled [" + NODE_UUID + "]: " + String(heatingEnabled));
-    Serial.println("PWM enabled [" + NODE_UUID + "]: " + String(pwmEnabled));
-    Serial.println("Relay enabled [" + NODE_UUID + "]: " + String(relayEnabled));
-    Serial.println("Ventilation enabled [" + NODE_UUID + "]: " + String(ventilationEnabled));
+    Serial.println("AC enabled [" + DEVICE_ID + "]: " + String(acEnabled));
+    Serial.println("Deep sleep enabled [" + DEVICE_ID + "]: " + String(deepSleepEnabled));
+    Serial.println("Heating enabled [" + DEVICE_ID + "]: " + String(heatingEnabled));
+    Serial.println("PWM enabled [" + DEVICE_ID + "]: " + String(pwmEnabled));
+    Serial.println("Relay enabled [" + DEVICE_ID + "]: " + String(relayEnabled));
+    Serial.println("Ventilation enabled [" + DEVICE_ID + "]: " + String(ventilationEnabled));
     Serial.println();
 
     /**
@@ -431,7 +433,7 @@ void setup() {
     server.on("/", []() {
         Serial.println("Server status");
         server.send(200, "text/plain",
-            "Server MAC is '"+ NODE_UUID +"', last reset reason was '" + resetReason + "'.\n" +
+            "Server MAC is '"+ MAC_ADDRESS +"', last reset reason was '" + resetReason + "'.\n" +
             "Version [" + String(PIN_LAYOUT) + "-" + String(VERSION) + "].\n" +
             "Current uptime (timestamp): " + String(millis()) + " ms\n" +
             "Current NTP (timestamp): " + String(unixTimestamp()) + "\n" +
@@ -681,7 +683,9 @@ void wifiConnect(char* ssid, char* password, bool rtc) {
  * Try to update the firmware.
  */
 void doHttpUpdate() {
-    t_httpUpdate_return ret = ESPhttpUpdate.update(String(IOT_BASE_URL) + "/firmware/check/" + IOT_USER_ID + "/" + IOT_PASSWORD + "/"  + NODE_UUID + "/" + String(VERSION), String(VERSION));
+    String updateUrl = String(IOT_BASE_URL) + "/firmware/check/" + IOT_USER_ID + "/" + IOT_PASSWORD + "/"  + DEVICE_ID + "/" + String(VERSION);
+    Serial.println("Update URL: " + updateUrl);
+    t_httpUpdate_return ret = ESPhttpUpdate.update(updateUrl, String(VERSION));
     switch(ret) {
         case HTTP_UPDATE_FAILED: {
             Serial.println("HTTP update: failed(" + String(ESPhttpUpdate.getLastError()) + "): " + ESPhttpUpdate.getLastErrorString());
@@ -881,7 +885,7 @@ void checkForUpdate() {
     http.useHTTP10(true);
     http.setTimeout(8000);
 
-    http.begin(String(IOT_BASE_URL) + "/firmware/check/" + IOT_USER_ID + "/" + IOT_PASSWORD + "/" + NODE_UUID + "/" + String(VERSION) + "/" + WiFi.localIP().toString());
+    http.begin(String(IOT_BASE_URL) + "/firmware/check/" + IOT_USER_ID + "/" + IOT_PASSWORD + "/" + DEVICE_ID + "/" + String(VERSION) + "/" + WiFi.localIP().toString());
     int code = http.GET();
     Serial.println("Checking for new firmware: " + String(code));
     http.end();
@@ -907,9 +911,15 @@ void handleSensor() {
     http.useHTTP10(true);
     http.setTimeout(8000);
 
-    http.begin(String(IOT_BASE_URL) + "/numberItem/create/" + IOT_USER_ID + "/" + IOT_PASSWORD + "/" + NODE_UUID + "/vcc/" + vcc);
-    Serial.println("Sent 'vcc': " + String(http.GET()));
-    http.end();
+    /**
+     * TODO: report the VCC via DEVICE_ID.
+     */
+    String NODE_KEY = nodeKeyByDeviceId();
+    if (String("not-found-node-key") != NODE_KEY) {
+        http.begin(String(IOT_BASE_URL) + "/measurement/create/" + NODE_KEY + "/vcc/" + vcc);
+        Serial.println("Sent 'vcc': " + String(http.GET()));
+        http.end();
+    }
 
     /**
      * Initiate the DS20B18 sensors.
@@ -965,15 +975,15 @@ void handleSensor() {
     Serial.println("Humidity     " + String(humidity));
     Serial.println("Pressure     " + String(pressure));
 
-    http.begin(String(IOT_BASE_URL) + "/numberItem/create/" + IOT_USER_ID + "/" + IOT_PASSWORD + "/" + NODE_UUID + "/temperature/" + String(temp));
+    http.begin(String(IOT_BASE_URL) + "/measurement/create/" + NODE_KEY + "/temperature/" + String(temp));
     Serial.println("Sent 'temperature': " + String(http.GET()));
     http.end();
 
-    http.begin(String(IOT_BASE_URL) + "/numberItem/create/" + IOT_USER_ID + "/" + IOT_PASSWORD + "/" + NODE_UUID + "/pressure/" + String(pressure));
+    http.begin(String(IOT_BASE_URL) + "/measurement/create/" + NODE_KEY + "/pressure/" + String(pressure));
     Serial.println("Sent 'pressure': " + String(http.GET()));
     http.end();
 
-    http.begin(String(IOT_BASE_URL) + "/numberItem/create/" + IOT_USER_ID + "/" + IOT_PASSWORD + "/" + NODE_UUID + "/humidity/" + String(humidity));
+    http.begin(String(IOT_BASE_URL) + "/measurement/create/" + NODE_KEY + "/humidity/" + String(humidity));
     Serial.println("Sent 'humidity': " + String(http.GET()));
     http.end();
 
@@ -1022,11 +1032,12 @@ void sendTemperature(DeviceAddress address, String vcc) {
     http.useHTTP10(true);
     http.setTimeout(8000);
 
-    http.begin(String(IOT_BASE_URL) + "/numberItem/create/" + IOT_USER_ID + "/" + IOT_PASSWORD + "/" + addressToString(address) + "/vcc/" + vcc);
+    String NODE_KEY = nodeKeyByAddress(addressToString(address));
+    http.begin(String(IOT_BASE_URL) + "/measurement/create/" + NODE_KEY + "/vcc/" + vcc);
     Serial.println("Sent 'vcc': " + String(http.GET()));
     http.end();
 
-    http.begin(String(IOT_BASE_URL) + "/numberItem/create/" + IOT_USER_ID + "/" + IOT_PASSWORD + "/" + addressToString(address) + "/temperature/" + String(temp));
+    http.begin(String(IOT_BASE_URL) + "/measurement/create/" + NODE_KEY + "/temperature/" + String(temp));
     Serial.println("Sent 'temperature': " + String(http.GET()));
     http.end();
 }
@@ -1045,7 +1056,7 @@ void ventilationController() {
     if(ventilationEnabled) {
         Serial.println("PWM based ventilation controller");
 
-        http.begin(String(IOT_BASE_URL) + "/numberItem/loadLastFloatValue/5ccf7fd89d76/humidity");
+        http.begin(String(IOT_BASE_URL) + "/measurement/loadLastFloatValue/15c28f10-00cc-11e7-832f-2b6139351b1b/humidity");
         Serial.println("Load humidity of '5ccf7fd89d76': " + String(http.GET()));
         String humidityStr = http.getString();
         http.end();
@@ -1093,7 +1104,7 @@ void heatController() {
      * Send the received IR command.
      */
     if (irSentCommand == 0) {
-        http.begin(String(IOT_BASE_URL) + "/irCommand/create/" + NODE_UUID + "/" + irReceivedCommand);
+        http.begin(String(IOT_BASE_URL) + "/irCommand/create/" + DEVICE_ID + "/" + irReceivedCommand);
         Serial.println("Sent 'ir command': " + String(http.GET()));
         http.end();
 
@@ -1106,7 +1117,7 @@ void heatController() {
     if(heatingEnabled) {
         Serial.println("Relay based heat controller");
 
-        http.begin(String(IOT_BASE_URL) + "/numberItem/loadLastFloatValue/5ccf7fd93c7b/temperature");
+        http.begin(String(IOT_BASE_URL) + "/measurement/loadLastFloatValue/14164380-997b-11e7-85ac-9591c57c2076/temperature");
         Serial.println("Load temperature of '5ccf7fd93c7b': " + String(http.GET()));
         String tempStr = http.getString();
         http.end();
@@ -1161,7 +1172,7 @@ void acController() {
                 irSendBuff[i] = acOff[i];
             }
 
-            http.begin(String(IOT_BASE_URL) + "/acCommand/create/" + NODE_UUID + "/" + String(irSendBuff) + "/off");
+            http.begin(String(IOT_BASE_URL) + "/acCommand/create/" +DEVICE_ID + "/" + String(irSendBuff) + "/off");
             Serial.println("Sent 'ir command': " + String(http.GET()));
             http.end();
 
@@ -1183,7 +1194,7 @@ void acController() {
                 irSendBuff[i] = acHeat23On[i];
             }
 
-            http.begin(String(IOT_BASE_URL) + "/acCommand/create/" + NODE_UUID + "/" + String(irSendBuff) + "/h23/on");
+            http.begin(String(IOT_BASE_URL) + "/acCommand/create/" + DEVICE_ID + "/" + String(irSendBuff) + "/h23/on");
             Serial.println("Sent 'ir command': " + String(http.GET()));
             http.end();
 
@@ -1195,7 +1206,7 @@ void acController() {
                 irSendBuff[i] = acHeatFMOn[i];
             }
 
-            http.begin(String(IOT_BASE_URL) + "/acCommand/create/" + NODE_UUID + "/" + String(irSendBuff) + "/h23/fm");
+            http.begin(String(IOT_BASE_URL) + "/acCommand/create/" + DEVICE_ID + "/" + String(irSendBuff) + "/h23/fm");
             Serial.println("Sent 'ir command': " + String(http.GET()));
             http.end();
 
@@ -1216,7 +1227,7 @@ void acController() {
                 irSendBuff[i] = acCool23On[i];
             }
 
-            http.begin(String(IOT_BASE_URL) + "/acCommand/create/" + NODE_UUID + "/" + String(irSendBuff) + "/c23/on");
+            http.begin(String(IOT_BASE_URL) + "/acCommand/create/" + DEVICE_ID + "/" + String(irSendBuff) + "/c23/on");
             Serial.println("Sent 'ir command': " + String(http.GET()));
             http.end();
 
@@ -1228,7 +1239,7 @@ void acController() {
                 irSendBuff[i] = acCoolFMOn[i];
             }
 
-            http.begin(String(IOT_BASE_URL) + "/acCommand/create/" + NODE_UUID + "/" + String(irSendBuff) + "/c23/fm");
+            http.begin(String(IOT_BASE_URL) + "/acCommand/create/" + DEVICE_ID + "/" + String(irSendBuff) + "/c23/fm");
             Serial.println("Sent 'ir command': " + String(http.GET()));
             http.end();
 
@@ -1292,7 +1303,7 @@ void acController() {
                 }
             }
 
-            http.begin(String(IOT_BASE_URL) + "/acCommand/create/" + NODE_UUID + "/" + String(irSendBuff) + "/hfm/" + followMeState + "/" + error + "/" + acIntegralError + "/" + acDerivativeError);
+            http.begin(String(IOT_BASE_URL) + "/acCommand/create/" + DEVICE_ID + "/" + String(irSendBuff) + "/hfm/" + followMeState + "/" + error + "/" + acIntegralError + "/" + acDerivativeError);
             Serial.println("Sent 'ir command': " + String(http.GET()));
             http.end();
 
@@ -1356,7 +1367,7 @@ void acController() {
                 }
             }
 
-            http.begin(String(IOT_BASE_URL) + "/acCommand/create/" + NODE_UUID + "/" + String(irSendBuff) + "/cfm/" + followMeState + "/" + error + "/" + acIntegralError + "/" + acDerivativeError);
+            http.begin(String(IOT_BASE_URL) + "/acCommand/create/" + DEVICE_ID + "/" + String(irSendBuff) + "/cfm/" + followMeState + "/" + error + "/" + acIntegralError + "/" + acDerivativeError);
             Serial.println("Sent 'ir command': " + String(http.GET()));
             http.end();
 
@@ -1598,5 +1609,31 @@ void handleNtpPacket() {
 
     ntpTimestampOffset = secsSince1900 - 2208988800UL - millis() / 1000;
     Serial.println("NTP response received, the timestamp is " + String(millis() / 1000 + ntpTimestampOffset));
+}
+
+/**
+ * Returns nodeKey by deviceId.
+ */
+String nodeKeyByDeviceId() {
+    for(int i = 0; i < NUMBER_OF_NODES; i++) {
+        if (MAC_ADDRESS.equals(nodeParametersMap[i].name)) {
+          return nodeParametersMap[i].nodeKey;
+        }
+    }
+
+    return "not-found-node-key";
+}
+
+/**
+ * Returns nodeKey by address.
+ */
+String nodeKeyByAddress(String address) {
+    for(int i = 0; i < NUMBER_OF_NODES; i++) {
+        if (address.equals(nodeParametersMap[i].name)) {
+          return nodeParametersMap[i].nodeKey;
+        }
+    }
+
+    return "not-found-node-key";
 }
 
