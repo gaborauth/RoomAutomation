@@ -16,6 +16,7 @@ typedef struct {
      int pwmEnabled;
      int relayEnabled;
      int ventilationEnabled;
+     int powerMeterEnabled;
 
      int staticIpEnabled;
      int staticIp[4];
@@ -31,7 +32,7 @@ typedef struct {
 } nodeParameters;
 
 deviceParameters deviceParametersMap[NUMBER_OF_DEVICES] = {
-    {"test", "61d315e0-46c7-11e8-a240-7bca10e5bd5b", 0, 0, 0, 0, 0, 0, 0, 0, {0, 0, 0, 0}, {0, 0, 0, 0}, {0, 0, 0, 0}}, // Test-1
+    {"test", "61d315e0-46c7-11e8-a240-7bca10e5bd5b", 0, 0, 0, 0, 0, 0, 0, 0, 0, {0, 0, 0, 0}, {0, 0, 0, 0}, {0, 0, 0, 0}}, // Test-1
 };
 
 nodeParameters nodeParametersMap[NUMBER_OF_NODES] = {
