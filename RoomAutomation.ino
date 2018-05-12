@@ -83,6 +83,12 @@ volatile unsigned long updateLastChecked = 0;
 volatile unsigned long updateCheckDuration = 60000;
 
 /**
+ * Power impulse metering enabled.
+ */
+volatile int powerMeterEnabled = 0;
+volatile int powerImpulseCount = 0;
+
+/**
  * State of the PWM.
  */
 volatile int pwmEnabled = 0;
@@ -301,6 +307,7 @@ void setup() {
             pwmEnabled = deviceParametersMap[i].pwmEnabled;
             relayEnabled = deviceParametersMap[i].relayEnabled;
             ventilationEnabled = deviceParametersMap[i].ventilationEnabled;
+            powerMeterEnabled = deviceParametersMap[i].powerMeterEnabled;
 
             staticIpEnabled = deviceParametersMap[i].staticIpEnabled;
             staticIp[0] = deviceParametersMap[i].staticIp[0];
@@ -342,6 +349,7 @@ void setup() {
     Serial.println("PWM enabled [" + DEVICE_ID + "]: " + String(pwmEnabled));
     Serial.println("Relay enabled [" + DEVICE_ID + "]: " + String(relayEnabled));
     Serial.println("Ventilation enabled [" + DEVICE_ID + "]: " + String(ventilationEnabled));
+    Serial.println("Power meter enabled [" + DEVICE_ID + "]: " + String(powerMeterEnabled));
     Serial.println();
 
     /**
@@ -744,13 +752,18 @@ void updatePWM() {
 
         if (switchNeedHandle == 1 && switchLastReceived < millis()) {
             switchNeedHandle = 0;
+
             if (switchState == switchSavedState) {
                 return;
             }
             switchSavedState = switchState;
-            
+
             if (switchState == LOW) {
                 switchLastChanged = millis();
+
+                if (powerMeterEnabled) {
+                    powerImpulseCount++;
+                }
             }
 
             if (switchState == HIGH) {
@@ -767,9 +780,10 @@ void updatePWM() {
                 }
                 return;
             }
-            
+
             if (switchDirection == 0) {
                 pirLastChange = millis();
+
                 pwmTargetPower = pwmMaxPower + 1;
                 pwmPrevTargetPower = pwmMaxPower + 1;
                 switchDirection = 1;
@@ -919,6 +933,14 @@ void handleSensor() {
         http.begin(String(IOT_BASE_URL) + "/measurement/create/" + NODE_KEY + "/vcc/" + vcc);
         Serial.println("Sent 'vcc': " + String(http.GET()));
         http.end();
+
+        if (powerMeterEnabled) {
+            int sendImpulseCount = powerImpulseCount;
+            powerImpulseCount = 0;
+            http.begin(String(IOT_BASE_URL) + "/measurement/create/" + NODE_KEY + "/powerImpulseCount/" + sendImpulseCount);
+            Serial.println("Sent 'sendImpulseCount': " + String(http.GET()));
+            http.end();
+        }
     }
 
     /**
